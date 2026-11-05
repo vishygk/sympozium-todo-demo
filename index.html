@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todo</title>
+<!-- Styles: inline only. No CDN, no webfonts, no external stylesheet. -->
+<style>
+  :root { --ink: #1a1a1a; --muted: #5b5b5b; --line: #d5d5d5; --accent: #0b57d0; --bg: #ffffff; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  main { max-width: 34rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+  form { display: flex; gap: .5rem; align-items: end; flex-wrap: wrap; }
+  form label { font-size: .875rem; color: var(--muted); flex-basis: 100%; }
+  #new-todo {
+    flex: 1 1 12rem; min-width: 0; padding: .5rem .6rem; font: inherit;
+    color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  }
+  button {
+    font: inherit; font-size: .875rem; padding: .45rem .8rem; min-height: 2.25rem;
+    color: var(--ink); background: #f4f4f4; border: 1px solid var(--line);
+    border-radius: 6px; cursor: pointer;
+  }
+  button:hover { background: #eaeaea; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #filters { display: flex; gap: .5rem; margin: 1rem 0; }
+  #filters button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+  }
+  ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  li { display: flex; align-items: center; gap: .6rem; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  li input[type="checkbox"] { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; }
+  li label { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
+  /* Completed is signalled by more than colour: strikethrough + muted + checked box. */
+  li.completed label { text-decoration: line-through; color: var(--muted); }
+  li .delete { padding: .2rem .55rem; min-height: 1.9rem; color: var(--ink); }
+  #status { margin: 1rem 0 0; font-size: .875rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Todo</h1>
+
+  <!-- Add form: Enter in the input and clicking Add both fire this one submit handler. -->
+  <form id="todo-form">
+    <label for="new-todo">New todo</label>
+    <input id="new-todo" name="new-todo" type="text" autocomplete="off" placeholder="What needs doing?">
+    <button type="submit">Add</button>
+  </form>
+
+  <!-- Filters: display-only, never persisted. -->
+  <div id="filters" role="group" aria-label="Filter todos">
+    <button type="button" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" data-filter="active" aria-pressed="false">Active</button>
+    <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
+  </div>
+
+  <!-- Rendered list (contents rebuilt by render(); listeners are delegated). -->
+  <ul id="todo-list"></ul>
+
+  <!-- Status line: polite live region for counts / empty state / save notice. -->
+  <p id="status" aria-live="polite"></p>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---- Constants & state -------------------------------------------------- */
+  var KEY = 'todo.v1.todos';
+  var todos = [];          // [{ id: string, title: string, completed: boolean }]
+  var filter = 'all';      // in memory only, never saved
+  var idCounter = 0;       // guards same-millisecond adds
+  var saveFailed = false;  // surfaces a non-fatal storage notice
+
+  var form = document.getElementById('todo-form');
+  var input = document.getElementById('new-todo');
+  var list = document.getElementById('todo-list');
+  var filters = document.getElementById('filters');
+  var status = document.getElementById('status');
+
+  /* ---- Persistence -------------------------------------------------------- */
+  function isValidItem(item) {
+    return !!item && typeof item === 'object' &&
+      typeof item.id === 'string' && item.id !== '' &&
+      typeof item.title === 'string' && item.title.trim() !== '' &&
+      typeof item.completed === 'boolean';
+  }
+
+  // Never throws: returns [] on absent/blocked/corrupt storage, drops invalid items individually.
+  function load() {
+    var raw = null;
+    try { raw = localStorage.getItem(KEY); } catch (e) { return []; }
+    if (raw === null || raw === '') return [];
+    var parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { return []; }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isValidItem);
+  }
+
+  // Never throws to the caller: swallows quota / disabled-storage errors.
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(todos));
+      saveFailed = false;
+    } catch (e) {
+      saveFailed = true;
+    }
+  }
+
+  /* ---- Render ------------------------------------------------------------- */
+  function nextId() {
+    idCounter += 1;
+    return 't_' + Date.now() + '_' + idCounter;
+  }
+
+  function render() {
+    var visible = todos.filter(function (t) {
+      if (filter === 'active') return !t.completed;
+      if (filter === 'completed') return t.completed;
+      return true;
+    });
+
+    // Rebuild list from visible items. Text goes in via textContent/createTextNode only.
+    list.textContent = '';
+
+    visible.forEach(function (todo) {
+      var li = document.createElement('li');
+      if (todo.completed) li.className = 'completed';
+      li.setAttribute('data-id', todo.id);
+
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'chk-' + todo.id;
+      checkbox.checked = todo.completed;
+
+      var label = document.createElement('label');
+      label.setAttribute('for', checkbox.id);
+      label.appendChild(document.createTextNode(todo.title));
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'delete';
+      del.setAttribute('data-action', 'delete');
+      del.setAttribute('aria-label', 'Delete ' + todo.title);
+      del.textContent = '\u00d7'; // ×
+
+      li.appendChild(checkbox);
+      li.appendChild(label);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+
+    // Active filter styling.
+    Array.prototype.forEach.call(filters.querySelectorAll('button'), function (btn) {
+      var isActive = btn.getAttribute('data-filter') === filter;
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+
+    // Status / empty state / save notice.
+    var activeCount = todos.filter(function (t) { return !t.completed; }).length;
+    var parts = [];
+    if (todos.length === 0) {
+      parts.push('No todos yet \u2014 add one above.');
+    } else if (visible.length === 0) {
+      parts.push('No ' + filter + ' todos.');
+    } else {
+      parts.push(todos.length + (todos.length === 1 ? ' item' : ' items'));
+      parts.push(activeCount + ' active');
+    }
+    if (saveFailed) parts.push("Couldn't save \u2014 changes won't persist after reload.");
+    status.textContent = parts.join(' \u00b7 ');
+  }
+
+  /* ---- Events ------------------------------------------------------------- */
+  // Add: one submit path for both Enter and the Add button.
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var title = input.value.trim();
+    if (!title) return;
+    todos.push({ id: nextId(), title: title, completed: false });
+    save();
+    render();
+    input.value = '';
+    input.focus();
+  });
+
+  // Toggle: delegated change on the list.
+  list.addEventListener('change', function (event) {
+    var target = event.target;
+    if (!target || target.type !== 'checkbox') return;
+    var li = target.closest('li');
+    if (!li) return;
+    var id = li.getAttribute('data-id');
+    var todo = todos.filter(function (t) { return t.id === id; })[0];
+    if (!todo) return;
+    todo.completed = !todo.completed;
+    save();
+    render();
+  });
+
+  // Delete: delegated click on the list.
+  list.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var del = target.closest('button[data-action="delete"]');
+    if (!del) return;
+    var li = del.closest('li');
+    if (!li) return;
+    var id = li.getAttribute('data-id');
+    todos = todos.filter(function (t) { return t.id !== id; });
+    save();
+    render();
+  });
+
+  // Filter: delegated click on the filter bar. Display only — no save().
+  filters.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var btn = target.closest('button[data-filter]');
+    if (!btn) return;
+    filter = btn.getAttribute('data-filter');
+    render();
+  });
+
+  /* ---- Startup ------------------------------------------------------------ */
+  todos = load();
+  render();
+})();
+</script>
+</body>
+</html>
