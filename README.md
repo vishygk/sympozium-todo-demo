@@ -1,29 +1,32 @@
-# Sympozium Todo Demo
+# Todo
 
-A demo repository for the BMAD crew implementation.
+A single-file Todo app: vanilla HTML, inline CSS, inline JS. No frameworks, no
+dependencies, no build step, no CDN. Todos persist in `localStorage` under the
+key `todo.v1.todos`.
 
-This project was built live during the [BMAD ensemble](https://github.com/isItObservable) crew workflow as a virtual post-it/todo board — featuring database, backend service, and frontend. Each PR represents one story driven through the full BMAD lifecycle: **Analyst → PM → Architect → Developer → QA**.
+## Run
 
-## Architecture
+Open `index.html` in a browser. That's it.
 
-This project follows the **BMAD** (Behavior, Model, Action, Display) architecture pattern for building reactive UI applications.
+## Features
 
-## Getting Started
+- Add a todo (Enter or the **Add** button — one code path)
+- List todos in insertion order
+- Toggle complete / incomplete
+- Delete a todo
+- Filter: All / Active / Completed (view-only, not persisted)
+- Persistence across reloads via `localStorage`
+- Accessible: labelled input, checkbox label = title, `aria-label` on delete,
+  `aria-pressed` on filters, `aria-live="polite"` status line
 
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Run the app: `npm start`
+## Files
 
-## Development
+- `index.html` — the entire app (HTML + CSS + JS)
+- `README.md` — this file
 
-- Follow the BMAD component boundaries
-- Write tests for all new features
-- Keep PRs focused and reviewable
+## Notes
 
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Storage access is defensive: absent, empty, corrupt, or blocked storage (e.g.
+`file://` restrictions) degrades to an empty list instead of throwing, and a
+failed write shows an inline notice rather than an error. Nothing else in this
+repository is referenced by the app.
